@@ -22,10 +22,10 @@
 
   const routes = ['home', 'import', 'export-links', 'courses', 'modifications', 'history', 'settings'];
   const fieldAliases = {
-    courseId: ['cours id', 'id cours'],
-    schoolYear: ['annee scolaire'],
-    title: ['intitule'],
-    level: ['niveau'],
+    courseId: ['cours id', 'id cours', 'code cours', 'cours code', 'course id', 'course code'],
+    schoolYear: ['annee scolaire', 'school year', 'annee academique'],
+    title: ['intitule', 'titre', 'title', 'intitule du cours'],
+    level: ['niveau', 'level', 'niveau du cours'],
     startDate: ['date de debut'],
     endDate: ['date de fin'],
     totalDuration: ['duree totale heures', 'duree totale'],
@@ -240,6 +240,7 @@
       renderImportResult(importRecord, sheetsInfo);
       renderAll();
       toast('Le nouveau fichier est maintenant la base active.');
+      $('#excelInput').value = '';
     } catch (err) {
       console.error(err);
       updateProgress(0, 'Importation impossible', err.message || 'Erreur inconnue');
@@ -299,41 +300,46 @@
   function detectHeaders(worksheet) {
     const required = ['courseId', 'schoolYear', 'title', 'level'];
     const maxHeaderRow = Math.min(50, Math.max(1, worksheet.rowCount || 1));
-    let bestMap = {};
+    let bestMap = { __headerRow: 1 };
     let bestScore = -1;
 
     for (let rowNumber = 1; rowNumber <= maxHeaderRow; rowNumber++) {
       const row = worksheet.getRow(rowNumber);
       const candidate = { __headerRow: rowNumber };
-      const normalizedByColumn = {};
       const maxColumn = Math.max(worksheet.columnCount || 0, row.cellCount || 0, 40);
+      const headers = {};
 
       for (let col = 1; col <= maxColumn; col++) {
-        const normalized = normalizeHeader(cellText(row.getCell(col)));
-        normalizedByColumn[col] = normalized;
+        const raw = fixMojibake(cellText(row.getCell(col)));
+        const normalized = normalizeHeader(raw);
+        headers[col] = normalized;
         if (!normalized) continue;
 
         for (const [key, aliases] of Object.entries(fieldAliases)) {
           if (candidate[key]) continue;
-          if (aliases.some(alias => headerMatches(normalized, alias))) {
-            candidate[key] = col;
-          }
+          if (aliases.some(alias => headerMatches(normalized, alias))) candidate[key] = col;
         }
+
+        // Tolérance supplémentaire pour les exports dont les titres diffèrent légèrement.
+        if (!candidate.courseId && /^(cours|course).*(id|code)$|^(id|code).*(cours|course)$|^coursid$/.test(normalized.replace(/\s+/g, ''))) candidate.courseId = col;
+        if (!candidate.schoolYear && /(annee|year).*(scolaire|school)|(scolaire|school).*(annee|year)/.test(normalized)) candidate.schoolYear = col;
+        if (!candidate.title && /^(intitule|titre|title)( du cours)?$/.test(normalized)) candidate.title = col;
+        if (!candidate.level && /^(niveau|level)( du cours)?$/.test(normalized)) candidate.level = col;
       }
 
-      // Structure exacte des exports UniPop vérifiée sur le fichier réel :
-      // A=Cours ID, B=Année scolaire, E=Intitulé, F=Niveau.
-      // Le fallback n'est activé que si la ligne ressemble réellement à une
-      // ligne d'en-tête UniPop, afin de ne jamais confondre une ligne de données.
-      const uniPopHeaderSignals = [
-        headerMatches(normalizedByColumn[1] || '', 'cours id'),
-        headerMatches(normalizedByColumn[2] || '', 'annee scolaire'),
-        headerMatches(normalizedByColumn[5] || '', 'intitule'),
-        headerMatches(normalizedByColumn[6] || '', 'niveau')
+      // Export UniPop standard : A=Cours ID, B=Année Scolaire, E=Intitulé, F=Niveau.
+      // On valide la structure grâce aux cellules B/E/F, puis on utilise les positions fixes.
+      const b = headers[2] || '';
+      const e = headers[5] || '';
+      const f = headers[6] || '';
+      const standardSignals = [
+        /(annee scolaire|school year)/.test(b),
+        /^(intitule|titre|title)/.test(e),
+        /^(niveau|level)/.test(f)
       ].filter(Boolean).length;
 
-      if (uniPopHeaderSignals >= 3) {
-        const knownColumns = {
+      if (standardSignals >= 2) {
+        Object.assign(candidate, {
           courseId: 1,
           schoolYear: 2,
           category: 3,
@@ -349,29 +355,20 @@
           additionalInfo: 17,
           locationName: 19,
           locationRoom: 20,
-          trainer: 35,
-          link: 36,
-          qr: 37
-        };
-        for (const [key, col] of Object.entries(knownColumns)) {
-          if (!candidate[key] && col <= Math.max(worksheet.columnCount || 0, 37)) {
-            candidate[key] = col;
-          }
-        }
+          trainer: 35
+        });
+        if (worksheet.columnCount >= 36) candidate.link = 36;
+        if (worksheet.columnCount >= 37) candidate.qr = 37;
       }
 
       const requiredHits = required.filter(key => Number.isInteger(candidate[key])).length;
-      const optionalHits = Object.keys(candidate)
-        .filter(key => key !== '__headerRow' && !required.includes(key) && Number.isInteger(candidate[key]))
-        .length;
-      const nonEmptyHeaders = Object.values(normalizedByColumn).filter(Boolean).length;
-      const score = requiredHits * 1000 + optionalHits * 10 + Math.min(nonEmptyHeaders, 50);
+      const optionalHits = Object.keys(candidate).filter(key => key !== '__headerRow' && !required.includes(key) && Number.isInteger(candidate[key])).length;
+      const score = requiredHits * 1000 + optionalHits * 10;
 
       if (score > bestScore) {
         bestScore = score;
         bestMap = candidate;
       }
-
       if (requiredHits === required.length && optionalHits >= 6) break;
     }
 
