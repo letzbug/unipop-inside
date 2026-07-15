@@ -42,7 +42,7 @@
     subject: ['matiere']
   };
 
-  window.UNIPOP_APP_VERSION = '2.0.0';
+  window.UNIPOP_APP_VERSION = '2.0.1';
   document.addEventListener('DOMContentLoaded', init);
 
   async function init() {
@@ -442,23 +442,7 @@
 
   async function ensureQrCodeLibrary() {
     if (window.QRCode && typeof window.QRCode.toDataURL === 'function') return;
-
-    const sources = [
-      'https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js',
-      'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js',
-      'https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js'
-    ];
-
-    for (const src of sources) {
-      try {
-        await loadExternalScript(src);
-        if (window.QRCode && typeof window.QRCode.toDataURL === 'function') return;
-      } catch (error) {
-        console.warn(`Chargement QR impossible depuis ${src}`, error);
-      }
-    }
-
-    throw new Error('Le module QR code est indisponible. Rechargez la page ou vérifiez que le réseau autorise cdnjs, jsDelivr ou unpkg.');
+    throw new Error('Le module QR code local n’a pas été chargé. Vérifiez que le fichier assets/qrcode.bundle.min.js est présent sur GitHub, puis rechargez la page avec Ctrl+F5.');
   }
 
   function loadExternalScript(src) {
