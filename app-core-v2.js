@@ -277,7 +277,13 @@
         state.generatedFilePath = storagePath;
       }
 
-      const payload = courses.map(c => ({ ...c, import_id: importRecord.id, id: crypto.randomUUID() }));
+      const payload = courses.map(c => ({
+        ...c,
+        start_date: c.start_date || null,
+        end_date: c.end_date || null,
+        import_id: importRecord.id,
+        id: crypto.randomUUID()
+      }));
       for (let i = 0; i < payload.length; i += 100) {
         const { error } = await state.supabase.from('courses').insert(payload.slice(i, i + 100));
         if (error) throw error;
@@ -770,7 +776,7 @@
   }
 
   function excelDateToIso(value) {
-    if (!value) return '';
+    if (value === null || value === undefined || value === '') return null;
     if (value instanceof Date && !isNaN(value)) return localIsoDate(value);
     if (typeof value === 'number') {
       const date = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
@@ -781,7 +787,7 @@
     const dmy = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
     if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
     const parsed = new Date(text);
-    return isNaN(parsed) ? '' : localIsoDate(parsed);
+    return isNaN(parsed) ? null : localIsoDate(parsed);
   }
 
   function localIsoDate(d) {
