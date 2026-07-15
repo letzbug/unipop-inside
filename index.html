@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <meta name="theme-color" content="#082a5c" />
+  <title>UniPop Inside</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <div class="app-shell">
+    <header class="topbar">
+      <button class="mobile-menu" id="mobileMenu" aria-label="Ouvrir le menu">☰</button>
+      <a class="brand" href="#home" aria-label="UniPop Inside">
+        <span class="brand-unipop">UNiPOP</span>
+        <span class="brand-inside">I N S I D E</span>
+      </a>
+      <div class="topbar-right">
+        <div class="school-year"><span>Année scolaire</span><strong id="schoolYear">—</strong></div>
+        <div class="admin-chip"><span class="avatar">U</span><div><strong>UniPop Inside</strong><small>Plateforme interne</small></div></div>
+      </div>
+    </header>
+
+    <aside class="sidebar" id="sidebar">
+      <nav>
+        <a href="#home" class="nav-link active" data-route="home"><span>⌂</span>Accueil</a>
+        <p class="nav-section">ESPACE FORMATEURS</p>
+        <a href="#courses" class="nav-link" data-route="courses"><span>⌕</span>Rechercher un cours</a>
+        <p class="nav-section">ADMINISTRATION</p>
+        <a href="#import" class="nav-link" data-route="import"><span>⇧</span>Importer un fichier Excel</a>
+        <a href="#export-links" class="nav-link" data-route="export-links"><span>↗</span>Fichier liens & QR codes</a>
+        <a href="#modifications" class="nav-link" data-route="modifications"><span>✎</span>Modifications des formateurs</a>
+        <a href="#history" class="nav-link" data-route="history"><span>◷</span>Historique des imports</a>
+        <p class="nav-section">GESTION</p>
+        <a href="#settings" class="nav-link" data-route="settings"><span>⚙</span>Paramètres</a>
+      </nav>
+      <div class="sidebar-footer"><strong>UniPop Inside</strong><small>Version 1.0.0</small></div>
+    </aside>
+
+    <main class="content">
+      <section class="view active" id="view-home">
+        <div class="page-head"><div><h1>Bienvenue dans UniPop Inside</h1><p>Votre plateforme de vérification et de gestion des cours avant publication.</p></div></div>
+        <div class="hero-grid">
+          <article class="hero-card trainer-card"><div class="hero-icon">👥</div><div><h2>Espace Formateurs</h2><p>Recherchez votre cours, vérifiez les informations et proposez des modifications si nécessaire.</p><button class="btn primary" data-go="courses">Rechercher un cours <span>→</span></button></div></article>
+          <article class="hero-card admin-card"><div class="hero-icon">▤</div><div><h2>Administration UniPop</h2><p>Importez les fichiers, générez les liens et QR codes et gérez les modifications des formateurs.</p><button class="btn success" data-go="import">Accéder à l’administration <span>→</span></button></div></article>
+        </div>
+        <div class="dashboard-grid">
+          <article class="panel active-file-panel"><div class="panel-head"><h3>Fichier actif</h3><span class="status-pill" id="activeStatus">Aucun fichier</span></div><div id="activeFileSummary" class="empty-state compact">Importez une première fiche Excel pour démarrer.</div><div class="stats-grid"><div class="stat"><strong id="statCourses">0</strong><span>Cours importés</span></div><div class="stat green"><strong id="statVerified">0</strong><span>Cours vérifiés</span></div><div class="stat orange"><strong id="statModified">0</strong><span>Cours modifiés</span></div><div class="stat purple"><strong id="statPending">0</strong><span>Modifications</span></div></div></article>
+          <article class="panel"><div class="panel-head"><h3>Dernières modifications</h3><button class="btn ghost small" data-go="modifications">Voir toutes</button></div><div id="recentModifications" class="empty-state compact">Aucune modification enregistrée.</div></article>
+        </div>
+        <article class="panel quick-actions"><h3>Actions rapides</h3><div class="quick-grid"><button data-go="import">⇧<span>Importer un fichier Excel</span></button><button data-go="export-links">↗<span>Télécharger liens & QR codes</span></button><button data-go="courses">⌕<span>Rechercher un cours</span></button><button data-go="modifications">⇩<span>Télécharger les modifications</span></button></div></article>
+      </section>
+
+      <section class="view" id="view-import">
+        <div class="page-head"><div><span class="eyebrow">ADMINISTRATION</span><h1>Importer le fichier principal</h1><p>Le nouveau fichier devient immédiatement la base active. L’ancienne campagne est archivée.</p></div></div>
+        <div class="warning-banner"><strong>Important :</strong> une nouvelle importation remplace la base active pour tous les formateurs. Les anciennes modifications restent dans l’historique.</div>
+        <article class="panel upload-panel">
+          <div class="drop-zone" id="dropZone"><input id="excelInput" type="file" accept=".xlsx" hidden><div class="upload-icon">⇧</div><h2>Déposez votre fichier Excel ici</h2><p>ou sélectionnez un fichier depuis votre ordinateur</p><button class="btn primary" id="chooseFile">Choisir un fichier</button><small>Format accepté : .xlsx · Tous les onglets seront analysés</small></div>
+          <div id="importProgress" class="progress-wrap hidden"><div class="progress-meta"><strong id="progressTitle">Analyse du fichier…</strong><span id="progressPct">0%</span></div><div class="progress"><span id="progressBar"></span></div><div id="progressLog" class="progress-log"></div></div>
+          <div id="importResult" class="hidden"></div>
+        </article>
+      </section>
+
+      <section class="view" id="view-export-links">
+        <div class="page-head"><div><span class="eyebrow">ADMINISTRATION</span><h1>Fichier avec liens & QR codes</h1><p>Téléchargez la copie du fichier principal enrichie avec les liens UniPop et les QR codes.</p></div></div>
+        <article class="panel locked-download"><div class="download-visual">QR</div><div><h2 id="exportFileName">Aucun fichier prêt</h2><p id="exportFileMeta">Importez d’abord un fichier principal.</p></div><button class="btn primary" id="downloadLinksBtn" disabled>Télécharger le fichier</button></article>
+      </section>
+
+      <section class="view" id="view-courses">
+        <div class="page-head"><div><span class="eyebrow">ESPACE FORMATEURS</span><h1>Vérifier mon cours</h1><p>Recherchez votre cours par intitulé, thème, Cours ID, niveau ou lieu.</p></div></div>
+        <article class="panel search-panel"><div class="search-box"><span>⌕</span><input id="courseSearch" type="search" placeholder="Ex. yoga, anglais, AR-AAS-7, Belval…" autocomplete="off"><button id="clearSearch" aria-label="Effacer">×</button></div><div class="search-help">Commencez à saisir au moins 2 caractères.</div></article>
+        <div id="courseResults" class="course-grid"></div>
+        <div id="courseEditor" class="modal hidden" role="dialog" aria-modal="true"><div class="modal-card large"><button class="modal-close" id="closeEditor">×</button><div id="editorContent"></div></div></div>
+      </section>
+
+      <section class="view" id="view-modifications">
+        <div class="page-head"><div><span class="eyebrow">ADMINISTRATION</span><h1>Modifications des formateurs</h1><p>Consultez uniquement les champs réellement modifiés, avec la valeur originale et la nouvelle proposition.</p></div><button class="btn primary" id="downloadModsBtn">Télécharger les modifications</button></div>
+        <article class="panel"><div class="table-tools"><input id="modSearch" type="search" placeholder="Filtrer par cours, formateur ou champ…"><span id="modCount">0 modification</span></div><div class="table-wrap"><table><thead><tr><th>Cours</th><th>Formateur</th><th>Champ modifié</th><th>Valeur originale</th><th>Nouvelle valeur</th><th>Date</th></tr></thead><tbody id="modTableBody"></tbody></table></div><div id="modsEmpty" class="empty-state">Aucune modification enregistrée pour le fichier actif.</div></article>
+      </section>
+
+      <section class="view" id="view-history">
+        <div class="page-head"><div><span class="eyebrow">GESTION</span><h1>Historique des imports</h1><p>Chaque nouvelle importation devient la base active et archive automatiquement la précédente.</p></div></div>
+        <div id="historyList" class="history-list"></div>
+      </section>
+
+      <section class="view" id="view-settings">
+        <div class="page-head"><div><span class="eyebrow">GESTION</span><h1>Paramètres</h1><p>Configuration locale de l’application et connexion au projet Supabase.</p></div></div>
+        <div class="settings-grid"><article class="panel"><h3>Connexion Supabase</h3><div id="supabaseState" class="connection-state"></div><p class="muted">Les identifiants se configurent dans <code>config.js</code>. Sans Supabase, l’application fonctionne en mode local uniquement sur cet ordinateur.</p></article><article class="panel"><h3>Protections de téléchargement</h3><p class="muted">Les mots de passe sont des protections d’utilisation et pourront être modifiés dans <code>config.js</code>.</p><div class="setting-row"><span>Fichier liens & QR codes</span><strong>Configuré</strong></div><div class="setting-row"><span>Fichier modifications</span><strong>Configuré</strong></div></article></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="password-modal modal hidden" id="passwordModal"><div class="modal-card password-card"><button class="modal-close" id="closePassword">×</button><div class="lock-icon">🔒</div><h2>Accès protégé</h2><p id="passwordText">Saisissez le mot de passe pour continuer.</p><input id="passwordInput" type="password" autocomplete="current-password" placeholder="Mot de passe"><div id="passwordError" class="field-error"></div><button class="btn primary full" id="passwordSubmit">Continuer</button></div></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
