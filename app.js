@@ -11,6 +11,7 @@
     imports: [],
     generatedBlob: null,
     generatedFilename: '',
+    generatedFilePath: '',
     originalWorkbook: null,
     selectedCourse: null,
     passwordAction: null,
@@ -69,6 +70,8 @@
         if (impErr) throw impErr;
         state.imports = imports || [];
         state.activeImport = state.imports.find(i => i.is_active) || null;
+      state.generatedFilename = state.activeImport?.generated_filename || '';
+      state.generatedFilePath = state.activeImport?.generated_file_path || '';
         if (state.activeImport) {
           const [{ data: courses, error: cErr }, { data: mods, error: mErr }] = await Promise.all([
             state.supabase.from('courses').select('*').eq('import_id', state.activeImport.id).order('title'),
@@ -211,6 +214,7 @@
         id: crypto.randomUUID(),
         original_filename: file.name,
         generated_filename: state.generatedFilename,
+        generated_file_path: '',
         school_year: mostCommon(courses.map(c => c.school_year).filter(Boolean)) || '',
         course_count: courses.length,
         sheet_count: workbook.worksheets.length,
@@ -238,6 +242,28 @@
       const { data: inserted, error: importErr } = await state.supabase.from('imports').insert(importRecord).select().single();
       if (importErr) throw importErr;
       importRecord = inserted;
+
+      if (state.generatedBlob) {
+        const safeName = slugify(state.generatedFilename.replace(/\.xlsx$/i, '')) || 'fichier-links-qr';
+        const storagePath = `${importRecord.id}/${safeName}.xlsx`;
+        const { error: uploadErr } = await state.supabase.storage
+          .from(cfg.storageBucket || 'unipop-files')
+          .upload(storagePath, state.generatedBlob, {
+            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            upsert: true
+          });
+        if (uploadErr) throw new Error(`Stockage du fichier impossible : ${uploadErr.message}`);
+        const { data: updated, error: updateErr } = await state.supabase
+          .from('imports')
+          .update({ generated_file_path: storagePath })
+          .eq('id', importRecord.id)
+          .select()
+          .single();
+        if (updateErr) throw updateErr;
+        importRecord = updated;
+        state.generatedFilePath = storagePath;
+      }
+
       const payload = courses.map(c => ({ ...c, import_id: importRecord.id, id: crypto.randomUUID() }));
       for (let i = 0; i < payload.length; i += 100) {
         const { error } = await state.supabase.from('courses').insert(payload.slice(i, i + 100));
@@ -488,8 +514,8 @@
   }
 
   function requestPassword(action) {
-    if (action === 'links' && !state.generatedBlob) {
-      return toast('Le fichier doit être généré pendant cette session avant le téléchargement.', true);
+    if (action === 'links' && !state.generatedBlob && !state.generatedFilePath && !state.activeImport?.generated_file_path) {
+      return toast('Aucun fichier avec liens et QR codes n’est disponible.', true);
     }
     if (action === 'mods' && !state.modifications.some(m => m.field_key !== '_verified')) {
       return toast('Aucune modification à télécharger.', true);
@@ -502,7 +528,7 @@
     setTimeout(() => $('#passwordInput').focus(), 50);
   }
 
-  function validatePassword() {
+  async function validatePassword() {
     const expected = state.passwordAction === 'links' ? cfg.downloadPasswords?.linksQr : cfg.downloadPasswords?.modifications;
     if ($('#passwordInput').value !== expected) {
       $('#passwordError').textContent = 'Mot de passe incorrect.';
@@ -510,8 +536,31 @@
     }
     const action = state.passwordAction;
     closePassword();
-    if (action === 'links') downloadBlob(state.generatedBlob, state.generatedFilename);
+    if (action === 'links') await downloadGeneratedWorkbook();
     if (action === 'mods') generateModificationsWorkbook();
+  }
+
+
+  async function downloadGeneratedWorkbook() {
+    if (state.generatedBlob) {
+      downloadBlob(state.generatedBlob, state.generatedFilename || state.activeImport?.generated_filename || 'UniPop_Links_QR.xlsx');
+      return;
+    }
+    const path = state.generatedFilePath || state.activeImport?.generated_file_path;
+    if (!state.online || !path) {
+      toast('Le fichier n’est plus disponible dans cette session.', true);
+      return;
+    }
+    try {
+      const { data, error } = await state.supabase.storage
+        .from(cfg.storageBucket || 'unipop-files')
+        .download(path);
+      if (error) throw error;
+      downloadBlob(data, state.activeImport?.generated_filename || state.generatedFilename || 'UniPop_Links_QR.xlsx');
+    } catch (err) {
+      console.error(err);
+      toast('Le fichier n’a pas pu être téléchargé depuis Supabase.', true);
+    }
   }
 
   function closePassword() {
@@ -587,7 +636,7 @@
     const active = state.activeImport;
     $('#exportFileName').textContent = active ? (state.generatedFilename || active.generated_filename || 'Fichier généré') : 'Aucun fichier prêt';
     $('#exportFileMeta').textContent = active ? `${active.course_count || state.courses.length} cours · ${active.sheet_count || 0} onglet(s) · Mot de passe requis` : 'Importez d’abord un fichier principal.';
-    $('#downloadLinksBtn').disabled = !state.generatedBlob;
+    $('#downloadLinksBtn').disabled = !(state.generatedBlob || state.generatedFilePath || active?.generated_file_path);
   }
 
   function renderModifications() {
