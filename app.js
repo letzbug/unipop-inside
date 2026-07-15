@@ -191,7 +191,7 @@
           row.getCell(headerMap.link).alignment = { wrapText: true, vertical: 'middle' };
           row.getCell(headerMap.link).font = { color: { argb: 'FF1455D9' }, underline: true };
 
-          const qrDataUrl = await QRCode.toDataURL(course.link, { width: 240, margin: 1, errorCorrectionLevel: 'M' });
+          const qrDataUrl = await createQrDataUrl(course.link);
           const imageId = workbook.addImage({ base64: qrDataUrl, extension: 'png' });
           worksheet.addImage(imageId, {
             tl: { col: headerMap.qr - 1 + 0.08, row: r - 1 + 0.08 },
@@ -297,67 +297,84 @@
   }
 
   function detectHeaders(worksheet) {
+    const required = ['courseId', 'schoolYear', 'title', 'level'];
+    const maxHeaderRow = Math.min(50, Math.max(1, worksheet.rowCount || 1));
     let bestMap = {};
     let bestScore = -1;
-    const maxHeaderRow = Math.min(30, Math.max(1, worksheet.rowCount));
 
     for (let rowNumber = 1; rowNumber <= maxHeaderRow; rowNumber++) {
-      const candidate = { __headerRow: rowNumber };
       const row = worksheet.getRow(rowNumber);
+      const candidate = { __headerRow: rowNumber };
       const normalizedByColumn = {};
+      const maxColumn = Math.max(worksheet.columnCount || 0, row.cellCount || 0, 40);
 
-      row.eachCell({ includeEmpty: true }, (cell, col) => {
-        const normalized = normalizeHeader(cellText(cell));
+      for (let col = 1; col <= maxColumn; col++) {
+        const normalized = normalizeHeader(cellText(row.getCell(col)));
         normalizedByColumn[col] = normalized;
-        if (!normalized) return;
+        if (!normalized) continue;
 
-        Object.entries(fieldAliases).forEach(([key, aliases]) => {
-          if (candidate[key]) return;
-          if (aliases.some(alias => headerMatches(normalized, alias))) candidate[key] = col;
-        });
-      });
-
-      // Fallback spécifique aux exports UniPop connus.
-      // Les colonnes essentielles sont toujours A, B, E et F, même lorsque
-      // les accents ont été mal encodés dans le fichier source.
-      const positionalFallback = {
-        courseId: 1,
-        schoolYear: 2,
-        title: 5,
-        level: 6,
-        category: 3,
-        subject: 4,
-        description: 8,
-        schedule: 9,
-        startDate: 11,
-        endDate: 12,
-        totalDuration: 13,
-        places: 15,
-        additionalInfo: 17,
-        locationName: 19,
-        locationRoom: 20
-      };
-
-      const looksLikeUniPopHeader =
-        headerMatches(normalizedByColumn[1] || '', 'cours id') &&
-        (headerMatches(normalizedByColumn[2] || '', 'annee scolaire') || normalizedByColumn[2]?.includes('scolaire')) &&
-        (headerMatches(normalizedByColumn[5] || '', 'intitule') || normalizedByColumn[5]?.includes('intitul'));
-
-      if (looksLikeUniPopHeader) {
-        Object.entries(positionalFallback).forEach(([key, col]) => {
-          if (!candidate[key] && worksheet.columnCount >= col) candidate[key] = col;
-        });
+        for (const [key, aliases] of Object.entries(fieldAliases)) {
+          if (candidate[key]) continue;
+          if (aliases.some(alias => headerMatches(normalized, alias))) {
+            candidate[key] = col;
+          }
+        }
       }
 
-      const requiredHits = ['courseId', 'schoolYear', 'title', 'level'].filter(key => candidate[key]).length;
-      const optionalHits = Object.keys(candidate).filter(key => key !== '__headerRow' && !['courseId', 'schoolYear', 'title', 'level'].includes(key)).length;
-      const score = requiredHits * 100 + optionalHits;
+      // Structure exacte des exports UniPop vérifiée sur le fichier réel :
+      // A=Cours ID, B=Année scolaire, E=Intitulé, F=Niveau.
+      // Le fallback n'est activé que si la ligne ressemble réellement à une
+      // ligne d'en-tête UniPop, afin de ne jamais confondre une ligne de données.
+      const uniPopHeaderSignals = [
+        headerMatches(normalizedByColumn[1] || '', 'cours id'),
+        headerMatches(normalizedByColumn[2] || '', 'annee scolaire'),
+        headerMatches(normalizedByColumn[5] || '', 'intitule'),
+        headerMatches(normalizedByColumn[6] || '', 'niveau')
+      ].filter(Boolean).length;
+
+      if (uniPopHeaderSignals >= 3) {
+        const knownColumns = {
+          courseId: 1,
+          schoolYear: 2,
+          category: 3,
+          subject: 4,
+          title: 5,
+          level: 6,
+          description: 8,
+          schedule: 9,
+          startDate: 11,
+          endDate: 12,
+          totalDuration: 13,
+          places: 15,
+          additionalInfo: 17,
+          locationName: 19,
+          locationRoom: 20,
+          trainer: 35,
+          link: 36,
+          qr: 37
+        };
+        for (const [key, col] of Object.entries(knownColumns)) {
+          if (!candidate[key] && col <= Math.max(worksheet.columnCount || 0, 37)) {
+            candidate[key] = col;
+          }
+        }
+      }
+
+      const requiredHits = required.filter(key => Number.isInteger(candidate[key])).length;
+      const optionalHits = Object.keys(candidate)
+        .filter(key => key !== '__headerRow' && !required.includes(key) && Number.isInteger(candidate[key]))
+        .length;
+      const nonEmptyHeaders = Object.values(normalizedByColumn).filter(Boolean).length;
+      const score = requiredHits * 1000 + optionalHits * 10 + Math.min(nonEmptyHeaders, 50);
+
       if (score > bestScore) {
         bestScore = score;
         bestMap = candidate;
       }
-      if (requiredHits === 4 && optionalHits >= 4) break;
+
+      if (requiredHits === required.length && optionalHits >= 6) break;
     }
+
     return bestMap;
   }
 
@@ -445,6 +462,57 @@
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '');
+  }
+
+  async function createQrDataUrl(text) {
+    await ensureQrCodeLibrary();
+    if (!window.QRCode || typeof window.QRCode.toDataURL !== 'function') {
+      throw new Error('Le générateur de QR codes n’a pas pu être chargé. Vérifiez la connexion Internet puis rechargez la page.');
+    }
+    return window.QRCode.toDataURL(text, {
+      width: 240,
+      margin: 1,
+      errorCorrectionLevel: 'M'
+    });
+  }
+
+  async function ensureQrCodeLibrary() {
+    if (window.QRCode && typeof window.QRCode.toDataURL === 'function') return;
+
+    const sources = [
+      'https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js',
+      'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js',
+      'https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js'
+    ];
+
+    for (const src of sources) {
+      try {
+        await loadExternalScript(src);
+        if (window.QRCode && typeof window.QRCode.toDataURL === 'function') return;
+      } catch (error) {
+        console.warn(`Chargement QR impossible depuis ${src}`, error);
+      }
+    }
+
+    throw new Error('Le module QR code est indisponible. Rechargez la page ou vérifiez que le réseau autorise cdnjs, jsDelivr ou unpkg.');
+  }
+
+  function loadExternalScript(src) {
+    return new Promise((resolve, reject) => {
+      const existing = [...document.scripts].find(script => script.src === src);
+      if (existing) {
+        if (window.QRCode && typeof window.QRCode.toDataURL === 'function') return resolve();
+        existing.addEventListener('load', resolve, { once: true });
+        existing.addEventListener('error', reject, { once: true });
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error(`Impossible de charger ${src}`));
+      document.head.appendChild(script);
+    });
   }
 
   function bindSearch() {
