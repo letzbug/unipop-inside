@@ -165,14 +165,21 @@
       const sheetsInfo = [];
       let totalRows = workbook.worksheets.reduce((n, ws) => n + Math.max(0, ws.rowCount - 1), 0);
       let processed = 0;
+      const skippedSheets = [];
 
       for (const worksheet of workbook.worksheets) {
         const headerMap = detectHeaders(worksheet);
-        validateRequiredHeaders(headerMap, worksheet.name);
+        const missingHeaders = getMissingRequiredHeaders(headerMap);
+        if (missingHeaders.length) {
+          skippedSheets.push({ name: worksheet.name, missing: missingHeaders });
+          sheetsInfo.push({ name: worksheet.name, count: 0, skipped: true, missing: missingHeaders });
+          continue;
+        }
         ensureOutputColumns(worksheet, headerMap);
         const sheetStartCount = courses.length;
+        const firstDataRow = (headerMap.__headerRow || 1) + 1;
 
-        for (let r = 2; r <= worksheet.rowCount; r++) {
+        for (let r = firstDataRow; r <= worksheet.rowCount; r++) {
           const row = worksheet.getRow(r);
           const courseId = cellText(row.getCell(headerMap.courseId));
           const title = fixMojibake(cellText(row.getCell(headerMap.title)));
@@ -205,7 +212,12 @@
         sheetsInfo.push({ name: worksheet.name, count: courses.length - sheetStartCount });
       }
 
-      updateProgress(86, 'Préparation du nouveau fichier…', `${courses.length} cours trouvés`);
+      if (!courses.length) {
+        const details = skippedSheets.map(s => `« ${s.name} » (${s.missing.join(', ')})`).join(' ; ');
+        throw new Error(`Aucun onglet de cours exploitable n’a été trouvé. Vérifiez les colonnes obligatoires : Cours ID, Année Scolaire, Intitulé et Niveau.${details ? ` Onglets ignorés : ${details}` : ''}`);
+      }
+
+      updateProgress(86, 'Préparation du nouveau fichier…', `${courses.length} cours trouvés${skippedSheets.length ? ` · ${skippedSheets.length} onglet(s) ignoré(s)` : ''}`);
       const outputBuffer = await workbook.xlsx.writeBuffer();
       state.generatedBlob = new Blob([outputBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       state.generatedFilename = `${file.name.replace(/\.xlsx$/i, '')}_Links_QR.xlsx`;
@@ -285,29 +297,47 @@
   }
 
   function detectHeaders(worksheet) {
-    const headerMap = {};
-    const row = worksheet.getRow(1);
-    row.eachCell({ includeEmpty: true }, (cell, col) => {
-      const normalized = normalizeHeader(cellText(cell));
-      Object.entries(fieldAliases).forEach(([key, aliases]) => {
-        if (!headerMap[key] && aliases.includes(normalized)) headerMap[key] = col;
+    let bestMap = {};
+    let bestScore = -1;
+    const maxHeaderRow = Math.min(20, Math.max(1, worksheet.rowCount));
+
+    for (let rowNumber = 1; rowNumber <= maxHeaderRow; rowNumber++) {
+      const candidate = { __headerRow: rowNumber };
+      const row = worksheet.getRow(rowNumber);
+      row.eachCell({ includeEmpty: true }, (cell, col) => {
+        const normalized = normalizeHeader(cellText(cell));
+        if (!normalized) return;
+        Object.entries(fieldAliases).forEach(([key, aliases]) => {
+          if (!candidate[key] && aliases.includes(normalized)) candidate[key] = col;
+        });
       });
-    });
-    return headerMap;
+
+      const requiredHits = ['courseId', 'schoolYear', 'title', 'level'].filter(key => candidate[key]).length;
+      const optionalHits = Object.keys(candidate).filter(key => key !== '__headerRow' && !['courseId', 'schoolYear', 'title', 'level'].includes(key)).length;
+      const score = requiredHits * 100 + optionalHits;
+      if (score > bestScore) {
+        bestScore = score;
+        bestMap = candidate;
+      }
+      if (requiredHits === 4 && optionalHits >= 4) break;
+    }
+    return bestMap;
   }
 
   function ensureOutputColumns(worksheet, map) {
     if (!map.link) {
       map.link = worksheet.columnCount + 1;
-      const c = worksheet.getCell(1, map.link);
+      const headerRow = map.__headerRow || 1;
+      const c = worksheet.getCell(headerRow, map.link);
       c.value = 'Link';
-      cloneHeaderStyle(worksheet.getCell(1, Math.max(1, map.link - 1)), c);
+      cloneHeaderStyle(worksheet.getCell(headerRow, Math.max(1, map.link - 1)), c);
     }
     if (!map.qr) {
       map.qr = Math.max(worksheet.columnCount + 1, map.link + 1);
-      const c = worksheet.getCell(1, map.qr);
+      const headerRow = map.__headerRow || 1;
+      const c = worksheet.getCell(headerRow, map.qr);
       c.value = 'QR-Code';
-      cloneHeaderStyle(worksheet.getCell(1, Math.max(1, map.qr - 1)), c);
+      cloneHeaderStyle(worksheet.getCell(headerRow, Math.max(1, map.qr - 1)), c);
     }
   }
 
@@ -320,10 +350,14 @@
     }
   }
 
-  function validateRequiredHeaders(map, sheetName) {
-    const required = ['courseId', 'schoolYear', 'title', 'level'];
-    const missing = required.filter(k => !map[k]);
-    if (missing.length) throw new Error(`Onglet « ${sheetName} » : colonnes obligatoires introuvables (${missing.join(', ')}).`);
+  function getMissingRequiredHeaders(map) {
+    const labels = {
+      courseId: 'Cours ID',
+      schoolYear: 'Année Scolaire',
+      title: 'Intitulé',
+      level: 'Niveau'
+    };
+    return Object.keys(labels).filter(key => !map[key]).map(key => labels[key]);
   }
 
   function extractCourse(row, map, sheetName, rowNumber) {
