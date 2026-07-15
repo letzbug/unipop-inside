@@ -159,7 +159,7 @@
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(buffer);
       state.originalWorkbook = workbook;
-      updateProgress(15, 'Analyse des onglets…', `${workbook.worksheets.length} onglet(s) détecté(s)`);
+      updateProgress(15, 'Analyse des onglets…', `${file.name} · ${workbook.worksheets.length} onglet(s) : ${workbook.worksheets.map(ws => ws.name).join(' | ')}`);
 
       const courses = [];
       const sheetsInfo = [];
@@ -214,7 +214,7 @@
 
       if (!courses.length) {
         const details = skippedSheets.map(s => `« ${s.name} » (${s.missing.join(', ')})`).join(' ; ');
-        throw new Error(`Aucun onglet de cours exploitable n’a été trouvé. Vérifiez les colonnes obligatoires : Cours ID, Année Scolaire, Intitulé et Niveau.${details ? ` Onglets ignorés : ${details}` : ''}`);
+        throw new Error(`Le fichier « ${file.name} » ne contient aucun onglet de cours reconnu. Onglets réellement lus : ${workbook.worksheets.map(ws => `« ${ws.name} »`).join(', ')}.${details ? ` Détail : ${details}` : ''}`);
       }
 
       updateProgress(86, 'Préparation du nouveau fichier…', `${courses.length} cours trouvés${skippedSheets.length ? ` · ${skippedSheets.length} onglet(s) ignoré(s)` : ''}`);
@@ -299,18 +299,55 @@
   function detectHeaders(worksheet) {
     let bestMap = {};
     let bestScore = -1;
-    const maxHeaderRow = Math.min(20, Math.max(1, worksheet.rowCount));
+    const maxHeaderRow = Math.min(30, Math.max(1, worksheet.rowCount));
 
     for (let rowNumber = 1; rowNumber <= maxHeaderRow; rowNumber++) {
       const candidate = { __headerRow: rowNumber };
       const row = worksheet.getRow(rowNumber);
+      const normalizedByColumn = {};
+
       row.eachCell({ includeEmpty: true }, (cell, col) => {
         const normalized = normalizeHeader(cellText(cell));
+        normalizedByColumn[col] = normalized;
         if (!normalized) return;
+
         Object.entries(fieldAliases).forEach(([key, aliases]) => {
-          if (!candidate[key] && aliases.includes(normalized)) candidate[key] = col;
+          if (candidate[key]) return;
+          if (aliases.some(alias => headerMatches(normalized, alias))) candidate[key] = col;
         });
       });
+
+      // Fallback spécifique aux exports UniPop connus.
+      // Les colonnes essentielles sont toujours A, B, E et F, même lorsque
+      // les accents ont été mal encodés dans le fichier source.
+      const positionalFallback = {
+        courseId: 1,
+        schoolYear: 2,
+        title: 5,
+        level: 6,
+        category: 3,
+        subject: 4,
+        description: 8,
+        schedule: 9,
+        startDate: 11,
+        endDate: 12,
+        totalDuration: 13,
+        places: 15,
+        additionalInfo: 17,
+        locationName: 19,
+        locationRoom: 20
+      };
+
+      const looksLikeUniPopHeader =
+        headerMatches(normalizedByColumn[1] || '', 'cours id') &&
+        (headerMatches(normalizedByColumn[2] || '', 'annee scolaire') || normalizedByColumn[2]?.includes('scolaire')) &&
+        (headerMatches(normalizedByColumn[5] || '', 'intitule') || normalizedByColumn[5]?.includes('intitul'));
+
+      if (looksLikeUniPopHeader) {
+        Object.entries(positionalFallback).forEach(([key, col]) => {
+          if (!candidate[key] && worksheet.columnCount >= col) candidate[key] = col;
+        });
+      }
 
       const requiredHits = ['courseId', 'schoolYear', 'title', 'level'].filter(key => candidate[key]).length;
       const optionalHits = Object.keys(candidate).filter(key => key !== '__headerRow' && !['courseId', 'schoolYear', 'title', 'level'].includes(key)).length;
@@ -322,6 +359,15 @@
       if (requiredHits === 4 && optionalHits >= 4) break;
     }
     return bestMap;
+  }
+
+  function headerMatches(value, alias) {
+    const normalizedValue = normalizeHeader(value);
+    const normalizedAlias = normalizeHeader(alias);
+    if (!normalizedValue || !normalizedAlias) return false;
+    return normalizedValue === normalizedAlias ||
+      normalizedValue.startsWith(`${normalizedAlias} `) ||
+      normalizedValue.endsWith(` ${normalizedAlias}`);
   }
 
   function ensureOutputColumns(worksheet, map) {
