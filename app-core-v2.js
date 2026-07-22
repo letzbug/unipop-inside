@@ -619,8 +619,8 @@
     if (action === 'links' && !state.generatedBlob && !state.generatedFilePath && !state.activeImport?.generated_file_path) {
       return toast('Aucun fichier avec liens et QR codes n’est disponible.', true);
     }
-    if (action === 'mods' && !state.modifications.some(m => m.field_key !== '_verified')) {
-      return toast('Aucune modification à télécharger.', true);
+    if (action === 'mods' && !state.modifications.length) {
+      return toast('Aucune validation ou modification à télécharger.', true);
     }
     state.passwordAction = action;
     $('#passwordText').textContent = action === 'links' ? 'Saisissez le mot de passe pour télécharger le fichier avec liens et QR codes.' : 'Saisissez le mot de passe pour télécharger les modifications des formateurs.';
@@ -672,20 +672,52 @@
 
   async function generateModificationsWorkbook() {
     const mods = state.modifications.filter(m => m.field_key !== '_verified');
+    const verified = state.modifications.filter(m => m.field_key === '_verified');
+    if (!mods.length && !verified.length) return toast('Aucune validation ou modification à télécharger.', true);
+
     const wb = new ExcelJS.Workbook();
     wb.creator = 'UniPop Inside';
-    const ws = wb.addWorksheet('Modifications formateurs', { views: [{ state: 'frozen', ySplit: 1 }] });
-    ws.columns = [
-      { header: 'Cours ID', key: 'course_code', width: 18 },
-      { header: 'Intitulé', key: 'course_title', width: 42 },
-      { header: 'Formateur', key: 'trainer_name', width: 25 },
-      { header: 'E-mail', key: 'trainer_email', width: 30 },
-      { header: 'Champ modifié', key: 'field_label', width: 30 },
-      { header: 'Valeur originale', key: 'original_value', width: 55 },
-      { header: 'Nouvelle valeur', key: 'proposed_value', width: 55 },
-      { header: 'Date de soumission', key: 'created_at', width: 22 }
-    ];
-    mods.forEach(m => ws.addRow({ ...m, created_at: formatDateTime(m.created_at) }));
+    wb.created = new Date();
+
+    if (mods.length) {
+      const ws = wb.addWorksheet('Modifications proposées');
+      ws.columns = [
+        { header: 'Cours ID', key: 'course_code', width: 20 },
+        { header: 'Intitulé', key: 'course_title', width: 45 },
+        { header: 'Formateur', key: 'trainer_name', width: 28 },
+        { header: 'E-mail', key: 'trainer_email', width: 30 },
+        { header: 'Champ modifié', key: 'field_label', width: 30 },
+        { header: 'Valeur originale', key: 'original_value', width: 55 },
+        { header: 'Nouvelle valeur', key: 'proposed_value', width: 55 },
+        { header: 'Date de soumission', key: 'created_at', width: 22 }
+      ];
+      mods.forEach(m => ws.addRow({ ...m, created_at: formatDateTime(m.created_at) }));
+      styleExportSheet(ws, 'H');
+    }
+
+    if (verified.length) {
+      const wsVerified = wb.addWorksheet('Validations sans modification');
+      wsVerified.columns = [
+        { header: 'Cours ID', key: 'course_code', width: 20 },
+        { header: 'Intitulé', key: 'course_title', width: 50 },
+        { header: 'Formateur', key: 'trainer_name', width: 28 },
+        { header: 'E-mail', key: 'trainer_email', width: 30 },
+        { header: 'Statut', key: 'status', width: 30 },
+        { header: 'Date de validation', key: 'created_at', width: 22 }
+      ];
+      verified.forEach(v => wsVerified.addRow({
+        ...v,
+        status: 'Confirmé sans modification',
+        created_at: formatDateTime(v.created_at)
+      }));
+      styleExportSheet(wsVerified, 'F');
+    }
+
+    const buffer = await wb.xlsx.writeBuffer();
+    downloadBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `Suivi_Formateurs_${state.activeImport?.school_year?.replace('/', '-') || 'UniPop'}.xlsx`);
+  }
+
+  function styleExportSheet(ws, lastColumn) {
     const header = ws.getRow(1);
     header.height = 27;
     header.eachCell(cell => {
@@ -696,13 +728,12 @@
     ws.eachRow((row, n) => {
       if (n > 1) {
         row.alignment = { vertical: 'top', wrapText: true };
-        row.height = Math.max(32, Math.min(100, 18 + Math.ceil(Math.max(String(row.getCell(6).value || '').length, String(row.getCell(7).value || '').length) / 80) * 15));
+        row.height = 34;
       }
       row.eachCell(cell => cell.border = { bottom: { style: 'thin', color: { argb: 'FFDCE5F1' } } });
     });
-    ws.autoFilter = { from: 'A1', to: 'H1' };
-    const buffer = await wb.xlsx.writeBuffer();
-    downloadBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `Modifications_Formateurs_${state.activeImport?.school_year?.replace('/', '-') || 'UniPop'}.xlsx`);
+    ws.autoFilter = { from: 'A1', to: `${lastColumn}1` };
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
   }
 
   function bindMisc() {
@@ -743,10 +774,34 @@
 
   function renderModifications() {
     const query = normalizeSearch($('#modSearch')?.value || '');
-    const mods = state.modifications.filter(m => m.field_key !== '_verified').filter(m => !query || normalizeSearch([m.course_code, m.course_title, m.trainer_name, m.field_label].join(' ')).includes(query));
-    $('#modCount').textContent = `${mods.length} modification${mods.length === 1 ? '' : 's'}`;
+    const allRealMods = state.modifications.filter(m => m.field_key !== '_verified');
+    const allVerified = state.modifications.filter(m => m.field_key === '_verified');
+
+    const mods = allRealMods.filter(m => !query || normalizeSearch([
+      m.course_code, m.course_title, m.trainer_name, m.trainer_email, m.field_label
+    ].join(' ')).includes(query));
+
+    const verified = allVerified.filter(m => !query || normalizeSearch([
+      m.course_code, m.course_title, m.trainer_name, m.trainer_email, 'verifie confirme sans modification'
+    ].join(' ')).includes(query));
+
+    const modifiedCourseIds = new Set(allRealMods.map(m => m.course_id_ref));
+    const verifiedCourseIds = new Set(allVerified.map(m => m.course_id_ref));
+    const reviewedCourseIds = new Set([...modifiedCourseIds, ...verifiedCourseIds]);
+    const pending = Math.max(0, state.courses.length - reviewedCourseIds.size);
+
+    $('#modCount').textContent = `${mods.length} modification${mods.length === 1 ? '' : 's'} · ${verified.length} validation${verified.length === 1 ? '' : 's'}`;
+    $('#reviewStats').innerHTML = `
+      <div class="review-stat"><strong>${state.courses.length}</strong><span>Cours actifs</span></div>
+      <div class="review-stat green"><strong>${verifiedCourseIds.size}</strong><span>Validés sans modification</span></div>
+      <div class="review-stat orange"><strong>${modifiedCourseIds.size}</strong><span>Avec modifications</span></div>
+      <div class="review-stat purple"><strong>${pending}</strong><span>En attente de vérification</span></div>`;
+
     $('#modTableBody').innerHTML = mods.map(m => `<tr><td><strong>${escapeHtml(m.course_code)}</strong><br>${escapeHtml(m.course_title)}</td><td>${escapeHtml(m.trainer_name)}<br><small>${escapeHtml(m.trainer_email || '')}</small></td><td>${escapeHtml(m.field_label)}</td><td class="value-cell">${escapeHtml(m.original_value || '—')}</td><td class="value-cell new-value">${escapeHtml(m.proposed_value || '—')}</td><td>${escapeHtml(formatDateTime(m.created_at))}</td></tr>`).join('');
     $('#modsEmpty').classList.toggle('hidden', mods.length > 0);
+
+    $('#verifiedTableBody').innerHTML = verified.map(v => `<tr><td><strong>${escapeHtml(v.course_code)}</strong><br>${escapeHtml(v.course_title)}</td><td>${escapeHtml(v.trainer_name)}<br><small>${escapeHtml(v.trainer_email || '')}</small></td><td><span class="validation-badge">✓ Confirmé sans modification</span></td><td>${escapeHtml(formatDateTime(v.created_at))}</td></tr>`).join('');
+    $('#verifiedEmpty').classList.toggle('hidden', verified.length > 0);
   }
 
   function renderHistory() {

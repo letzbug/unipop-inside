@@ -39,7 +39,7 @@
         <p class="nav-section">GESTION</p>
         <a href="#settings" class="nav-link" data-route="settings"><span>⚙</span>Paramètres</a>
       </nav>
-      <div class="sidebar-footer"><strong>UniPop Inside</strong><small>Version FG_2.0.2</small></div>
+      <div class="sidebar-footer"><strong>UniPop Inside</strong><small>FG-2.1.0</small></div>
     </aside>
 
     <main class="content">
@@ -79,8 +79,10 @@
       </section>
 
       <section class="view" id="view-modifications">
-        <div class="page-head"><div><span class="eyebrow">ADMINISTRATION</span><h1>Modifications des formateurs</h1><p>Consultez uniquement les champs réellement modifiés, avec la valeur originale et la nouvelle proposition.</p></div><button class="btn primary" id="downloadModsBtn">Télécharger les modifications</button></div>
-        <article class="panel"><div class="table-tools"><input id="modSearch" type="search" placeholder="Filtrer par cours, formateur ou champ…"><span id="modCount">0 modification</span></div><div class="table-wrap"><table><thead><tr><th>Cours</th><th>Formateur</th><th>Champ modifié</th><th>Valeur originale</th><th>Nouvelle valeur</th><th>Date</th></tr></thead><tbody id="modTableBody"></tbody></table></div><div id="modsEmpty" class="empty-state">Aucune modification enregistrée pour le fichier actif.</div></article>
+        <div class="page-head"><div><span class="eyebrow">ADMINISTRATION</span><h1>Suivi des validations formateurs</h1><p>Consultez les cours confirmés sans modification et les propositions de modification.</p></div><button class="btn primary" id="downloadModsBtn">Télécharger le suivi</button></div>
+        <div id="reviewStats" class="review-stats"></div>
+        <article class="panel"><div class="panel-head"><h3>Modifications proposées</h3></div><div class="table-tools"><input id="modSearch" type="search" placeholder="Filtrer par cours, formateur ou statut…"><span id="modCount">0 modification</span></div><div class="table-wrap"><table><thead><tr><th>Cours</th><th>Formateur</th><th>Champ modifié</th><th>Valeur originale</th><th>Nouvelle valeur</th><th>Date</th></tr></thead><tbody id="modTableBody"></tbody></table></div><div id="modsEmpty" class="empty-state">Aucune modification proposée pour le fichier actif.</div></article>
+        <article class="panel verified-panel"><div class="panel-head"><h3>Validés sans modification</h3></div><div class="table-wrap"><table><thead><tr><th>Cours</th><th>Formateur</th><th>Statut</th><th>Date</th></tr></thead><tbody id="verifiedTableBody"></tbody></table></div><div id="verifiedEmpty" class="empty-state">Aucun cours confirmé sans modification.</div></article>
       </section>
 
       <section class="view" id="view-history">
@@ -90,7 +92,7 @@
 
       <section class="view" id="view-settings">
         <div class="page-head"><div><span class="eyebrow">GESTION</span><h1>Paramètres</h1><p>Configuration locale de l’application et connexion au projet Supabase.</p></div></div>
-        <div class="settings-grid"><article class="panel"><h3>Connexion Supabase</h3><div id="supabaseState" class="connection-state"></div><p class="muted"> <code></code></p></article><article class="panel"><h3>Protections de téléchargement</h3><p class="muted"> <code></code></p><div class="setting-row"><span>Fichier liens & QR codes</span><strong>Configuré</strong></div><div class="setting-row"><span>Fichier modifications</span><strong>Configuré</strong></div></article></div>
+        <div class="settings-grid"><article class="panel"><h3>Connexion Supabase</h3><div id="supabaseState" class="connection-state"></div><p class="muted">Les identifiants se configurent dans <code>config.js</code>. Sans Supabase, l’application fonctionne en mode local uniquement sur cet ordinateur.</p></article><article class="panel"><h3>Protections de téléchargement</h3><p class="muted">Les mots de passe sont des protections d’utilisation et pourront être modifiés dans <code>config.js</code>.</p><div class="setting-row"><span>Fichier liens & QR codes</span><strong>Configuré</strong></div><div class="setting-row"><span>Fichier modifications</span><strong>Configuré</strong></div></article></div>
       </section>
     </main>
   </div>
@@ -101,6 +103,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="assets/qrcode.bundle.min.js?v=1.5.3-local"></script>
-  <script src="app-core-v2.js?v=2.0.2"></script>
+  <script src="app-core-v2.js?v=FG-2.1.0"></script>
 </body>
 </html>
