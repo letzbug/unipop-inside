@@ -42,7 +42,7 @@
     subject: ['matiere']
   };
 
-  window.UNIPOP_APP_VERSION = '2.0.1';
+  window.UNIPOP_APP_VERSION = 'FG-2.2.1';
   document.addEventListener('DOMContentLoaded', init);
 
   async function init() {
@@ -516,11 +516,13 @@
         <div class="readonly-grid">
           <div class="field"><label>Intitulé</label><input class="readonly" readonly value="${escapeAttr(course.title)}"></div>
           <div class="field"><label>Cours ID</label><input class="readonly" readonly value="${escapeAttr(course.course_id)}"></div>
+          <div class="field full"><label>Niveau</label><input class="readonly" readonly value="${escapeAttr(course.level || 'Non indiqué')}"></div>
         </div>
         <h3>Informations modifiables</h3>
         <div class="edit-grid">
           <div class="field"><label for="editStart">Date de début</label><input id="editStart" type="date" value="${escapeAttr(course.start_date || '')}"></div>
           <div class="field"><label for="editEnd">Date de fin</label><input id="editEnd" type="date" value="${escapeAttr(course.end_date || '')}"></div>
+          <div class="field full"><label for="editSchedule">Horaires</label><input id="editSchedule" value="${escapeAttr(course.schedule || '')}" placeholder="Ex. 18:00 – 20:00"><small class="field-help" id="scheduleWeekday">${escapeHtml(course.start_date ? `Jour correspondant : ${formatWeekdayFr(course.start_date)}` : 'Le jour de la semaine sera affiché selon la date de début.')}</small></div>
           <div class="field full"><label for="editDescription">Description du cours</label><textarea id="editDescription">${escapeHtml(course.description || '')}</textarea></div>
           <div class="field full"><label for="editAdditional">Renseignements complémentaires</label><textarea id="editAdditional">${escapeHtml(course.additional_info || '')}</textarea></div>
           <div class="field"><label for="editLocation">Lieu de formation – Nom</label><input id="editLocation" value="${escapeAttr(course.location_name || '')}"></div>
@@ -537,8 +539,24 @@
     document.body.style.overflow = 'hidden';
     $('#courseForm').addEventListener('submit', submitCourseChanges);
     $('#confirmNoChange').addEventListener('click', confirmNoChange);
+    $('#editStart').addEventListener('change', updateScheduleWeekday);
     $('#copyLink').addEventListener('click', async () => { await navigator.clipboard.writeText(course.link); toast('Lien copié.'); });
     $('#downloadQr').addEventListener('click', () => downloadDataUrl(course.qr_data, `${slugify(course.course_id)}-qr.png`));
+  }
+
+  function formatWeekdayFr(isoDate) {
+    if (!isoDate) return '';
+    const parts = String(isoDate).split('-').map(Number);
+    if (parts.length !== 3 || parts.some(Number.isNaN)) return '';
+    const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+    return new Intl.DateTimeFormat('fr-FR', { weekday: 'long', timeZone: 'UTC' }).format(d);
+  }
+
+  function updateScheduleWeekday() {
+    const date = $('#editStart')?.value || '';
+    const target = $('#scheduleWeekday');
+    if (!target) return;
+    target.textContent = date ? `Jour correspondant : ${formatWeekdayFr(date)}` : 'Le jour de la semaine sera affiché selon la date de début.';
   }
 
   async function submitCourseChanges(e) {
@@ -550,13 +568,14 @@
     const proposed = {
       start_date: $('#editStart').value,
       end_date: $('#editEnd').value,
+      schedule: $('#editSchedule').value.trim(),
       description: $('#editDescription').value.trim(),
       additional_info: $('#editAdditional').value.trim(),
       location_name: $('#editLocation').value.trim(),
       location_room: $('#editRoom').value.trim()
     };
     const labels = {
-      start_date: 'Date de début', end_date: 'Date de fin', description: 'Description du cours',
+      start_date: 'Date de début', end_date: 'Date de fin', schedule: 'Horaires', description: 'Description du cours',
       additional_info: 'Renseignements complémentaires', location_name: 'Lieu de formation – Nom', location_room: 'Lieu de formation – Salle'
     };
     const changes = Object.keys(proposed).filter(k => normalizeComparable(proposed[k]) !== normalizeComparable(c[k])).map(k => ({
